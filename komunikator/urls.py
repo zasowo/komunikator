@@ -22,8 +22,13 @@ from django.http import HttpResponse
 def home(request):
     return HttpResponse("Strona domowa")
 
+# TODO - remove
+def about(request):
+    return HttpResponse("Test commit ttt")
+
 urlpatterns = [
     path('', home, name='home'),
     path('admin/', admin.site.urls),
     path('', include('core.urls')),
+    path('about/', about, name='about')
 ]
