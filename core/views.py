@@ -1,7 +1,22 @@
+from django.contrib.auth.decorators import login_required
 from django.shortcuts import render, redirect
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate, login, logout
 from django.contrib import messages
+from .forms import UserUpdateForm
+
+@login_required(login_url='/login/')
+def profile_settings(request):
+    if request.method == 'POST':
+        form = UserUpdateForm(request.POST, instance=request.user)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'Your profile has been updated!')
+            return redirect('profile_settings')
+    else:
+        form = UserUpdateForm(instance=request.user)
+    return render(request, 'profile/profile_settings.html', {'form': form})
+
 
 def home(request):
     return render(request, 'home.html')
