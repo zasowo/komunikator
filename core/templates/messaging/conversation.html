@@ -1,0 +1,88 @@
+{% extends 'base.html' %}
+
+{% block title %}Chat with {{ other_participant.username }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-8 offset-md-2">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <a href="{% url 'inbox' %}" class="text-white text-decoration-none">← Back</a>
+                            | Chat with {{ other_participant.username }}
+                        </h5>
+                    </div>
+                </div>
+                
+                <div class="card-body" id="message-container" style="height: 400px; overflow-y: auto;">
+                    {% for message in messages %}
+                        <div class="message mb-3 {% if message.sender == user %}text-end{% endif %}">
+                            <div class="d-inline-block" style="max-width: 70%;">
+                                <div class="p-2 rounded {% if message.sender == user %}bg-primary text-white{% else %}bg-light{% endif %}">
+                                    <strong>{{ message.sender.username }}</strong><br>
+                                    {{ message.content|linebreaks }}
+                                </div>
+                                <small class="text-muted">{{ message.timestamp|date:"M d, Y H:i" }}</small>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+                
+                <div class="card-footer">
+                    <form method="post" id="message-form">
+                        {% csrf_token %}
+                        <div class="input-group">
+                            {{ form.content }}
+                            <button type="submit" class="btn btn-primary">Send</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Scroll to bottom of messages on load
+    const messageContainer = document.getElementById('message-container');
+    messageContainer.scrollTop = messageContainer.scrollHeight;
+
+    // Auto-refresh messages every 3 seconds
+    let lastMessageId = {{ messages.last.id|default:0 }};
+    
+    function checkNewMessages() {
+        fetch(`{% url 'get_new_messages' conversation.id %}?last_message_id=${lastMessageId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.messages.length > 0) {
+                    data.messages.forEach(msg => {
+                        const isCurrentUser = msg.sender__id === data.current_user_id;
+                        const messageDiv = document.createElement('div');
+                        messageDiv.className = `message mb-3 ${isCurrentUser ? 'text-end' : ''}`;
+                        
+                        const timestamp = new Date(msg.timestamp).toLocaleString();
+                        
+                        messageDiv.innerHTML = `
+                            <div class="d-inline-block" style="max-width: 70%;">
+                                <div class="p-2 rounded ${isCurrentUser ? 'bg-primary text-white' : 'bg-light'}">
+                                    <strong>${msg.sender__username}</strong><br>
+                                    ${msg.content.replace(/\n/g, '<br>')}
+                                </div>
+                                <small class="text-muted">${timestamp}</small>
+                            </div>
+                        `;
+                        
+                        messageContainer.appendChild(messageDiv);
+                        lastMessageId = msg.id;
+                    });
+                    
+                    messageContainer.scrollTop = messageContainer.scrollHeight;
+                }
+            });
+    }
+
+    setInterval(checkNewMessages, 3000);
+</script>
+{% endblock %}
