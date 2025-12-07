@@ -1,1 +1,5 @@
+Run server:
 python manage.py runserver
+
+Required libs:
+pip install cryptography
