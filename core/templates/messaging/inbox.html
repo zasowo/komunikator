@@ -14,13 +14,12 @@
             {% if conversations %}
                 <div class="list-group">
                     {% for conversation in conversations %}
-                        {% with other_user=conversation.get_other_participant|default:user %}
                         {% with last_msg=conversation.get_last_message %}
                         <a href="{% url 'conversation' conversation.id %}" 
                            class="list-group-item list-group-item-action">
                             <div class="d-flex w-100 justify-content-between">
                                 <h5 class="mb-1">
-                                    {{ other_user.username }}
+                                    {{ conversation.other_user.username }}
                                     {% if conversation.unread_count > 0 %}
                                         <span class="badge bg-primary rounded-pill">{{ conversation.unread_count }}</span>
                                     {% endif %}
@@ -38,7 +37,6 @@
                                 </p>
                             {% endif %}
                         </a>
-                        {% endwith %}
                         {% endwith %}
                     {% endfor %}
                 </div>

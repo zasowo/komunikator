@@ -74,11 +74,12 @@ def inbox(request):
         )
     ).order_by('-last_message_time')
 
-    context = {
-        'conversations': conversations,
-    }
-    return render(request, 'messaging/inbox.html', context)
+    for c in conversations:
+        c.other_user = c.get_other_participant(request.user)
 
+    return render(request, 'messaging/inbox.html', {
+        'conversations': conversations,
+    })
 
 @login_required(login_url='/login/')
 def conversation(request, conversation_id):
