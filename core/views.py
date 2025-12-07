@@ -1,4 +1,6 @@
 from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import render, redirect
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate, login, logout
 from django.contrib import messages
@@ -7,6 +9,20 @@ from django.db.models import Q, Max, Count
 from django.http import JsonResponse
 from .models import Conversation, Message, MessageReadStatus
 from .forms import MessageForm
+from .forms import UserUpdateForm
+
+@login_required(login_url='/login/')
+def profile_settings(request):
+    if request.method == 'POST':
+        form = UserUpdateForm(request.POST, instance=request.user)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'Your profile has been updated!')
+            return redirect('profile_settings')
+    else:
+        form = UserUpdateForm(instance=request.user)
+    return render(request, 'profile/profile_settings.html', {'form': form})
+
 
 def home(request):
     return render(request, 'home.html')
@@ -67,13 +83,13 @@ def inbox(request):
 @login_required(login_url='/login/')
 def conversation(request, conversation_id):
     conversation = get_object_or_404(
-        Conversation, 
+        Conversation,
         id=conversation_id,
         participants=request.user
     )
-    
+
     messages = conversation.messages.select_related('sender').all()
-    
+
     unread_messages = messages.filter(is_read=False).exclude(sender=request.user)
     for message in unread_messages:
         message.is_read = True
@@ -82,7 +98,7 @@ def conversation(request, conversation_id):
             message=message,
             user=request.user
         )
-    
+
     if request.method == 'POST':
         form = MessageForm(request.POST)
         if form.is_valid():
@@ -94,9 +110,9 @@ def conversation(request, conversation_id):
             return redirect('conversation', conversation_id=conversation.id)
     else:
         form = MessageForm()
-    
+
     other_participant = conversation.get_other_participant(request.user)
-    
+
     context = {
         'conversation': conversation,
         'messages': messages,
@@ -109,29 +125,29 @@ def conversation(request, conversation_id):
 @login_required(login_url='/login/')
 def start_conversation(request, user_id):
     other_user = get_object_or_404(User, id=user_id)
-    
+
     if other_user == request.user:
         return redirect('inbox')
-    
+
     existing_conversation = Conversation.objects.filter(
         participants=request.user
     ).filter(
         participants=other_user
     ).first()
-    
+
     if existing_conversation:
         return redirect('conversation', conversation_id=existing_conversation.id)
-    
+
     conversation = Conversation.objects.create()
     conversation.participants.add(request.user, other_user)
-    
+
     return redirect('conversation', conversation_id=conversation.id)
 
 
 @login_required(login_url='/login/')
 def user_list(request):
     users = User.objects.exclude(id=request.user.id)
-    
+
     context = {
         'users': users,
     }
@@ -141,19 +157,19 @@ def user_list(request):
 @login_required(login_url='/login/')
 def get_new_messages(request, conversation_id):
     conversation = get_object_or_404(
-        Conversation, 
+        Conversation,
         id=conversation_id,
         participants=request.user
     )
-    
+
     last_message_id = request.GET.get('last_message_id', 0)
-    
+
     new_messages = conversation.messages.filter(
         id__gt=last_message_id
     ).select_related('sender').values(
         'id', 'content', 'timestamp', 'sender__username', 'sender__id'
     )
-    
+
     return JsonResponse({
         'messages': list(new_messages),
         'current_user_id': request.user.id

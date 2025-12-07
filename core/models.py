@@ -23,13 +23,13 @@ class Conversation(models.Model):
 
 class Message(models.Model):
     conversation = models.ForeignKey(
-        Conversation, 
-        related_name='messages', 
+        Conversation,
+        related_name='messages',
         on_delete=models.CASCADE
     )
     sender = models.ForeignKey(
-        User, 
-        related_name='sent_messages', 
+        User,
+        related_name='sent_messages',
         on_delete=models.CASCADE
     )
     content = models.TextField()
@@ -45,8 +45,8 @@ class Message(models.Model):
 
 class MessageReadStatus(models.Model):
     message = models.ForeignKey(
-        Message, 
-        related_name='read_statuses', 
+        Message,
+        related_name='read_statuses',
         on_delete=models.CASCADE
     )
     user = models.ForeignKey(User, on_delete=models.CASCADE)
@@ -57,3 +57,16 @@ class MessageReadStatus(models.Model):
 
     def __str__(self):
         return f"{self.user.username} read message {self.message.id}"
+
+class UserSettings(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    email = models.EmailField()
+
+    def __str__(self):
+        return self.user.username
+
+    def get_email(self):
+        return self.user.email
+
+    def get_username(self):
+        return self.user.username
