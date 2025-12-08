@@ -7,9 +7,14 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import Q, Max, Count
 from django.http import JsonResponse
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.permissions import AllowAny
 from .models import Conversation, Message, MessageReadStatus, UserSettings
 from .forms import MessageForm
 from .forms import UserUpdateForm
+import json
 
 @login_required(login_url='/login/')
 def profile_settings(request):
@@ -198,3 +203,143 @@ def get_new_messages(request, conversation_id):
         'messages': list(new_messages),
         'current_user_id': request.user.id
     })
+
+
+@api_view(["GET"])
+def api_unread_messages(request):
+    api_key = (
+        request.headers.get("X-API-Key")
+        or request.GET.get("api_key")
+        or None
+    )
+
+    if not api_key:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.lower().startswith("api-key "):
+            api_key = auth_header.split(" ", 1)[1].strip()
+
+    if not api_key:
+        return Response({"detail": "API key required"}, status=status.HTTP_401_UNAUTHORIZED)
+
+    try:
+        user_settings = UserSettings.objects.select_related("user").get(api_key=api_key)
+        user = user_settings.user
+    except UserSettings.DoesNotExist:
+        return Response({"detail": "Invalid API key"}, status=status.HTTP_401_UNAUTHORIZED)
+
+    qs = (
+        Message.objects.filter(conversation__participants=user, is_read=False)
+        .exclude(sender=user)
+        .select_related("sender", "conversation")
+        .prefetch_related("conversation__participants")
+        .order_by("timestamp")
+    )
+
+    results = []
+    for m in qs:
+        participants = list(m.conversation.participants.all())
+        other_user = next((u for u in participants if u.id != user.id), None)
+        results.append({
+            "id": m.id,
+            "content": m.content,
+            "timestamp": m.timestamp.isoformat(),
+            "conversation_id": m.conversation_id,
+            "sender": {
+                "id": m.sender_id,
+                "username": m.sender.username,
+            },
+            "other_participant": (
+                {"id": other_user.id, "username": other_user.username} if other_user else None
+            ),
+        })
+
+    return Response({
+        "count": len(results),
+        "current_user_id": user.id,
+        "messages": results,
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def api_send_message(request, conversation_id):
+    api_key = (
+        request.headers.get("X-API-Key")
+        or request.GET.get("api_key")
+        or None
+    )
+
+    if not api_key:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.lower().startswith("api-key "):
+            api_key = auth_header.split(" ", 1)[1].strip()
+
+    if not api_key:
+        return Response({"detail": "API key required"}, status=status.HTTP_401_UNAUTHORIZED)
+
+    try:
+        user_settings = UserSettings.objects.select_related("user").get(api_key=api_key)
+        user = user_settings.user
+    except UserSettings.DoesNotExist:
+        return Response({"detail": "Invalid API key"}, status=status.HTTP_401_UNAUTHORIZED)
+
+    conversation = get_object_or_404(
+        Conversation,
+        id=conversation_id,
+        participants=user,
+    )
+
+    content_type = (request.headers.get("Content-Type") or request.META.get("CONTENT_TYPE") or "").split(";")[0].strip().lower()
+    raw_body = request.body or b""
+    content = None
+
+    if content_type in ("application/x-www-form-urlencoded", "multipart/form-data"):
+        content = request._request.POST.get("content")
+    elif raw_body:
+        body_text = raw_body.decode(request.encoding or "utf-8", errors="replace")
+        if content_type in ("application/json", "application/ld+json", "text/json", "application/vnd.api+json"):
+            try:
+                data = json.loads(body_text)
+                if isinstance(data, dict):
+                    content = data.get("content")
+                elif isinstance(data, str):
+                    content = data
+            except json.JSONDecodeError:
+                content = body_text
+        elif content_type in ("text/plain", ""):
+            content = body_text
+        else:
+            content = request._request.POST.get("content") or body_text
+    else:
+        content = request._request.POST.get("content") or request.GET.get("content")
+
+    if content is None:
+        return Response({"detail": "'content' is required"}, status=status.HTTP_400_BAD_REQUEST)
+    content = str(content).strip()
+    if not content:
+        return Response({"detail": "Message content cannot be empty"}, status=status.HTTP_400_BAD_REQUEST)
+
+    msg = Message.objects.create(
+        conversation=conversation,
+        sender=user,
+        content=content,
+    )
+    conversation.save()
+
+    other_user = conversation.get_other_participant(user)
+    payload = {
+        "id": msg.id,
+        "content": msg.content,
+        "timestamp": msg.timestamp.isoformat(),
+        "conversation_id": conversation.id,
+        "sender": {
+            "id": user.id,
+            "username": user.username,
+        },
+        "other_participant": (
+            {"id": other_user.id, "username": other_user.username} if other_user else None
+        ),
+    }
+
+    return Response(payload, status=status.HTTP_201_CREATED)

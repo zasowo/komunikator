@@ -3,4 +3,4 @@ python manage.py runserver
 
 Required libs:
 pip install cryptography
-pip install djangorestframework
+pip install djangorestframework pyyaml uritemplate inflection
