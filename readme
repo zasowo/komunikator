@@ -3,3 +3,4 @@ python manage.py runserver
 
 Required libs:
 pip install cryptography
+pip install djangorestframework

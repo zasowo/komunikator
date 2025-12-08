@@ -7,21 +7,44 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import Q, Max, Count
 from django.http import JsonResponse
-from .models import Conversation, Message, MessageReadStatus
+from .models import Conversation, Message, MessageReadStatus, UserSettings
 from .forms import MessageForm
 from .forms import UserUpdateForm
 
 @login_required(login_url='/login/')
 def profile_settings(request):
+    user_settings, _created = UserSettings.objects.get_or_create(
+        user=request.user,
+        defaults={'email': request.user.email}
+    )
+
     if request.method == 'POST':
-        form = UserUpdateForm(request.POST, instance=request.user)
-        if form.is_valid():
-            form.save()
-            messages.success(request, f'Your profile has been updated!')
+        if 'generate_api_key' in request.POST:
+            import secrets
+            new_key = secrets.token_urlsafe(32)
+            user_settings.api_key = new_key
+            if user_settings.email != request.user.email:
+                user_settings.email = request.user.email
+            user_settings.save()
+            messages.success(request, 'A new API key has been generated.')
             return redirect('profile_settings')
+        else:
+            form = UserUpdateForm(request.POST, instance=request.user)
+            if form.is_valid():
+                form.save()
+                if user_settings.email != request.user.email:
+                    user_settings.email = request.user.email
+                    user_settings.save(update_fields=['email'])
+                messages.success(request, 'Your profile has been updated!')
+                return redirect('profile_settings')
     else:
         form = UserUpdateForm(instance=request.user)
-    return render(request, 'profile/profile_settings.html', {'form': form})
+
+    context = {
+        'form': form,
+        'api_key': user_settings.api_key,
+    }
+    return render(request, 'profile/profile_settings.html', context)
 
 
 def home(request):

@@ -32,8 +32,8 @@
         <h1>Hello, {{user.username}}</h1>
     {% else %}
         <h1>You want to message privately? Join us.</h1>
+        <a href="/register/" class="btn">Register</a>
     {% endif %}
-    <a href="/register/" class="btn">Register</a>
     <a href="/aboutus/" class="btn">About us</a>
     {% if user.is_authenticated %}
         <a href="/logout/" class="btn">Logout</a>
