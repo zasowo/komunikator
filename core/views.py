@@ -1,20 +1,77 @@
+from django.utils.dateparse import parse_datetime
+from django.utils import timezone
 from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth.decorators import login_required
-from django.shortcuts import render, redirect
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate, login, logout
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import Q, Max, Count
-from django.http import JsonResponse
-from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from django.http import Http404
+from rest_framework.decorators import api_view, authentication_classes, permission_classes, schema
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.authentication import SessionAuthentication
+from rest_framework.schemas.openapi import AutoSchema
 from .models import Conversation, Message, MessageReadStatus, UserSettings
+from .authentication import APIKeyAuthentication
 from .forms import MessageForm
 from .forms import UserUpdateForm
 import json
+import secrets
+from django.db import transaction
+
+class ManualParametersSchema(AutoSchema):
+    def __init__(self, query_parameters=None, request_body_fields=None, tags=None, operation_id_base=None):
+        super().__init__(tags=tags, operation_id_base=operation_id_base)
+        self.query_parameters = query_parameters or []
+        self.request_body_fields = request_body_fields or []
+
+    def get_operation(self, path, method):
+        operation = super().get_operation(path, method)
+        if self.query_parameters:
+            if 'parameters' not in operation:
+                operation['parameters'] = []
+            for param in self.query_parameters:
+                operation['parameters'].append({
+                    'name': param['name'],
+                    'in': 'query',
+                    'required': param.get('required', False),
+                    'description': param.get('description', ''),
+                    'schema': {
+                        'type': param.get('type', 'string'),
+                    },
+                })
+        return operation
+
+    def get_request_body(self, path, method):
+        if not self.request_body_fields:
+            return super().get_request_body(path, method)
+        
+        properties = {}
+        required = []
+        for field in self.request_body_fields:
+            name = field['name']
+            properties[name] = {
+                'type': field.get('type', 'string'),
+                'description': field.get('description', ''),
+            }
+            if field.get('required', False):
+                required.append(name)
+        
+        schema = {
+            'type': 'object',
+            'properties': properties,
+        }
+        if required:
+            schema['required'] = required
+            
+        return {
+            'content': {
+                'application/json': {'schema': schema},
+                'application/x-www-form-urlencoded': {'schema': schema},
+            }
+        }
 
 @login_required(login_url='/login/')
 def profile_settings(request):
@@ -25,7 +82,6 @@ def profile_settings(request):
 
     if request.method == 'POST':
         if 'generate_api_key' in request.POST:
-            import secrets
             new_key = secrets.token_urlsafe(32)
             user_settings.api_key = new_key
             if user_settings.email != request.user.email:
@@ -183,8 +239,22 @@ def user_list(request):
     return render(request, 'messaging/user_list.html', context)
 
 
-@login_required(login_url='/login/')
+@api_view(["GET"])
+@authentication_classes([APIKeyAuthentication, SessionAuthentication])
+@permission_classes([IsAuthenticated])
+@schema(ManualParametersSchema(
+    query_parameters=[
+        {'name': 'last_message_id', 'type': 'integer', 'description': 'Zwraca wiadomości z określonej konwersacji. Opcjonalny argument do ograniczenia selekcji do tylko wiadomości nowszysch niż określona wiadomość.'},
+        {'name': 'api_key', 'type': 'string', 'description': 'Klucz uwierzytelniania'}
+    ]
+))
 def get_new_messages(request, conversation_id):
+    """
+    Zwraca wiadomości z określonej konwersacji. Opcjonalny argument do ograniczenia selekcji do tylko wiadomości nowszysch niż określona wiadomość.
+
+    Parameters:
+    - last_message_id: (optional) Ostatnia/najnowsza wiadomość, która nie powinna zostać zwrócona.
+    """
     conversation = get_object_or_404(
         Conversation,
         id=conversation_id,
@@ -199,33 +269,28 @@ def get_new_messages(request, conversation_id):
         'id', 'content', 'timestamp', 'sender__username', 'sender__id'
     )
 
-    return JsonResponse({
+    return Response({
         'messages': list(new_messages),
         'current_user_id': request.user.id
     })
 
 
 @api_view(["GET"])
+@authentication_classes([APIKeyAuthentication, SessionAuthentication])
+@permission_classes([IsAuthenticated])
+@schema(ManualParametersSchema(
+    query_parameters=[
+        {'name': 'api_key', 'type': 'string', 'description': 'Klucz uwierzytelniania'}
+    ]
+))
 def api_unread_messages(request):
-    api_key = (
-        request.headers.get("X-API-Key")
-        or request.GET.get("api_key")
-        or None
-    )
+    """
+    Wszystkie wiadomości, do których ma dostęp dany użytkownik i nie zostały oznaczone jako przeczytane
 
-    if not api_key:
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.lower().startswith("api-key "):
-            api_key = auth_header.split(" ", 1)[1].strip()
-
-    if not api_key:
-        return Response({"detail": "API key required"}, status=status.HTTP_401_UNAUTHORIZED)
-
-    try:
-        user_settings = UserSettings.objects.select_related("user").get(api_key=api_key)
-        user = user_settings.user
-    except UserSettings.DoesNotExist:
-        return Response({"detail": "Invalid API key"}, status=status.HTTP_401_UNAUTHORIZED)
+    Query Parameters:
+    - api_key: Klucz uwierzytelniania.
+    """
+    user = request.user
 
     qs = (
         Message.objects.filter(conversation__participants=user, is_read=False)
@@ -259,30 +324,189 @@ def api_unread_messages(request):
         "messages": results,
     }, status=status.HTTP_200_OK)
 
+@api_view(["GET"])
+@authentication_classes([APIKeyAuthentication, SessionAuthentication])
+@permission_classes([IsAuthenticated])
+@schema(ManualParametersSchema(
+    query_parameters=[
+        {'name': 'api_key', 'type': 'string', 'description': 'Klucz uwierzytelniania.'}
+    ]
+))
+def api_get_conversations(request):
+    """
+    Zwraca listę konwersacji uwierzytelnionego użytkownika.
+
+    Query Parameters:
+    - api_key: Klucz uwierzytelniania.
+    """
+    user = request.user
+    conversations = user.conversations.annotate(
+        last_message_time=Max('messages__timestamp'),
+        unread_count=Count(
+            'messages',
+            filter=Q(messages__is_read=False) & ~Q(messages__sender=user)
+        )
+    ).order_by('-last_message_time')
+
+    results = []
+    for conv in conversations:
+        other_user = conv.get_other_participant(user)
+        last_message = conv.get_last_message()
+        
+        results.append({
+            "id": conv.id,
+            "other_participant": {
+                "id": other_user.id,
+                "username": other_user.username,
+            } if other_user else None,
+            "last_message": {
+                "id": last_message.id,
+                "content": last_message.content,
+                "timestamp": last_message.timestamp.isoformat(),
+                "sender_id": last_message.sender_id,
+                "is_deleted": last_message.is_deleted,
+            } if last_message else None,
+            "unread_count": conv.unread_count,
+            "created_at": conv.created_at.isoformat(),
+            "updated_at": conv.updated_at.isoformat(),
+        })
+
+    return Response({"conversations": results}, status=status.HTTP_200_OK)
 
 @api_view(["POST"])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([APIKeyAuthentication, SessionAuthentication])
+@permission_classes([IsAuthenticated])
+@schema(ManualParametersSchema(
+    query_parameters=[
+        {'name': 'api_key', 'type': 'string', 'description': 'Klucz uwierzytelniania.'}
+    ],
+    request_body_fields=[
+        {'name': 'content', 'type': 'string', 'required': True, 'description': 'Nowa zawartość wiadomośći.'}
+    ]
+))
+def api_edit_message(request, message_id):
+    """
+    Edytuje wiadomość, ustawiając timestamp edycji. Sprawdza, czy wiadomość nie jest usunięta
+
+    Request Parameters:
+    - content: (body, required) Nowa zawartość wiadomości.
+    - api_key: Klucz uwierzytelniania.
+    """
+    user = request.user
+
+    message = get_object_or_404(Message, id=message_id)
+    
+    if message.is_deleted:
+        return Response({"detail": "Wiadomość jest usunięta"}, status=status.HTTP_400_BAD_REQUEST)
+
+    if message.sender != user:
+        return Response({"detail": "Wiadomość wysłana była przez innego użytkownika"}, status=status.HTTP_403_FORBIDDEN)
+
+    content_type = (request.headers.get("Content-Type") or request.META.get("CONTENT_TYPE") or "").split(";")[0].strip().lower()
+    raw_body = request.body or b""
+    content = None
+
+    if content_type in ("application/x-www-form-urlencoded", "multipart/form-data"):
+        content = request._request.POST.get("content")
+    elif raw_body:
+        body_text = raw_body.decode(request.encoding or "utf-8", errors="replace")
+        if content_type in ("application/json", "application/ld+json", "text/json", "application/vnd.api+json"):
+            try:
+                data = json.loads(body_text)
+                if isinstance(data, dict):
+                    content = data.get("content")
+                elif isinstance(data, str):
+                    content = data
+            except json.JSONDecodeError:
+                content = body_text
+        elif content_type in ("text/plain", ""):
+            content = body_text
+        else:
+            content = request._request.POST.get("content") or body_text
+    else:
+        content = request._request.POST.get("content") or request.GET.get("content")
+
+    if content is None:
+        return Response({"detail": "brak 'content'"}, status=status.HTTP_400_BAD_REQUEST)
+    content = str(content).strip()
+    if not content:
+        return Response({"detail": "Wiadomość nie może być pusta"}, status=status.HTTP_400_BAD_REQUEST)
+
+    message.content = content
+    message.edited_at = timezone.now()
+    message.save()
+
+    payload = {
+        "id": message.id,
+        "content": message.content,
+        "timestamp": message.timestamp.isoformat(),
+        "edited_at": message.edited_at.isoformat(),
+        "conversation_id": message.conversation.id,
+        "sender": {
+            "id": user.id,
+            "username": user.username,
+        },
+    }
+
+    return Response(payload, status=status.HTTP_200_OK)
+
+
+@api_view(["DELETE"])
+@authentication_classes([APIKeyAuthentication, SessionAuthentication])
+@permission_classes([IsAuthenticated])
+@schema(ManualParametersSchema(
+    query_parameters=[
+        {'name': 'api_key', 'type': 'string', 'description': 'Klucz uwierzytelniania'}
+    ]
+))
+def api_delete_message(request, message_id):
+    """
+    Soft usuwa wiadomość ustawiając treść na <message deleted> i ustawiając flagę w modelu.
+
+    Request Parameters:
+    - api_key: (query/header) Klucz uwierzytelniania
+    """
+    user = request.user
+    message = get_object_or_404(Message, id=message_id)
+
+    if message.sender != user:
+        return Response({"detail": "Nie możesz usuwać wiadomości innych użytkowników"}, status=status.HTTP_403_FORBIDDEN)
+
+    if message.is_deleted:
+        return Response({"detail": "Wiadomość jest już usunięta."}, status=status.HTTP_400_BAD_REQUEST)
+
+    message.content = "<message deleted>"
+    message.is_deleted = True
+    message.save()
+
+    return Response({
+        "id": message.id,
+        "content": message.content,
+        "is_deleted": message.is_deleted,
+        "timestamp": message.timestamp.isoformat()
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(["POST"])
+@authentication_classes([APIKeyAuthentication, SessionAuthentication])
+@permission_classes([IsAuthenticated])
+@schema(ManualParametersSchema(
+    query_parameters=[
+        {'name': 'api_key', 'type': 'string', 'description': 'Klucz uwierzytelniania'}
+    ],
+    request_body_fields=[
+        {'name': 'content', 'type': 'string', 'required': True, 'description': 'Treść wiadomości.'}
+    ]
+))
 def api_send_message(request, conversation_id):
-    api_key = (
-        request.headers.get("X-API-Key")
-        or request.GET.get("api_key")
-        or None
-    )
+    """
+    Wysyła wiadomość do danej konwersacji.
 
-    if not api_key:
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.lower().startswith("api-key "):
-            api_key = auth_header.split(" ", 1)[1].strip()
-
-    if not api_key:
-        return Response({"detail": "API key required"}, status=status.HTTP_401_UNAUTHORIZED)
-
-    try:
-        user_settings = UserSettings.objects.select_related("user").get(api_key=api_key)
-        user = user_settings.user
-    except UserSettings.DoesNotExist:
-        return Response({"detail": "Invalid API key"}, status=status.HTTP_401_UNAUTHORIZED)
+    Request Parameters:
+    - content: (body, required) Treść wiadomości.
+    - api_key: (query/header) Klucz uwierzytelniania
+    """
+    user = request.user
 
     conversation = get_object_or_404(
         Conversation,
@@ -315,10 +539,10 @@ def api_send_message(request, conversation_id):
         content = request._request.POST.get("content") or request.GET.get("content")
 
     if content is None:
-        return Response({"detail": "'content' is required"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"detail": "brak 'content'"}, status=status.HTTP_400_BAD_REQUEST)
     content = str(content).strip()
     if not content:
-        return Response({"detail": "Message content cannot be empty"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"detail": "Wiadomość nie może być pusta"}, status=status.HTTP_400_BAD_REQUEST)
 
     msg = Message.objects.create(
         conversation=conversation,
@@ -343,3 +567,370 @@ def api_send_message(request, conversation_id):
     }
 
     return Response(payload, status=status.HTTP_201_CREATED)
+    
+@api_view(["GET"])
+@authentication_classes([APIKeyAuthentication, SessionAuthentication])
+@permission_classes([IsAuthenticated])
+@schema(ManualParametersSchema(
+    query_parameters=[
+        {'name': 'api_key', 'type': 'string', 'description': 'Klucz uwierzytelniania'}
+    ]
+))
+def api_get_messages_with_user(request, user_id):
+    """
+    Zwraca wszystkie wiadomości z danym użytkownikiem
+
+    Query Parameters:
+    - api_key: (query/header) Klucz uwierzytelniania
+    """
+    user = request.user
+
+    other_user = get_object_or_404(User, id=user_id)
+    
+    conversation = Conversation.objects.filter(participants=user).filter(participants=other_user).first()
+    
+    if not conversation:
+        return Response({
+            "messages": [],
+            "current_user_id": user.id,
+            "other_user_id": other_user.id
+        }, status=status.HTTP_200_OK)
+
+    messages_qs = conversation.messages.all().select_related('sender').order_by('timestamp')
+    
+    results = []
+    for m in messages_qs:
+        results.append({
+            "id": m.id,
+            "content": m.content,
+            "timestamp": m.timestamp.isoformat(),
+            "sender": {
+                "id": m.sender.id,
+                "username": m.sender.username,
+            }
+        })
+
+    return Response({
+        "messages": results,
+        "current_user_id": user.id,
+        "other_user_id": other_user.id,
+        "conversation_id": conversation.id
+    }, status=status.HTTP_200_OK)
+
+@api_view(["POST"])
+@authentication_classes([APIKeyAuthentication, SessionAuthentication])
+@permission_classes([IsAuthenticated])
+@schema(ManualParametersSchema(
+    query_parameters=[
+        {'name': 'api_key', 'type': 'string', 'description': 'Klucz uwierzytelniania'}
+    ]
+))
+def api_start_conversation(request, user_id):
+    """
+    Rozpoczyna nową konwersację pomiędzy dwoma użytkownikami.
+
+    Query Parameters:
+    - api_key: (query/header) Klucz uwierzytelniania
+    """
+    user = request.user
+
+    other_user = get_object_or_404(User, id=user_id)
+
+    if other_user == user:
+        return Response({"detail": "Nie można utworzyć konwersacji z samym sobą"}, status=status.HTTP_400_BAD_REQUEST)
+
+    existing_conversation = Conversation.objects.filter(
+        participants=user
+    ).filter(
+        participants=other_user
+    ).first()
+
+    if existing_conversation:
+        return Response({
+            "conversation_id": existing_conversation.id,
+            "detail": "Konwersacja już istnieje."
+        }, status=status.HTTP_200_OK)
+
+    conversation = Conversation.objects.create()
+    conversation.participants.add(user, other_user)
+
+    return Response({
+        "conversation_id": conversation.id,
+        "detail": "Utworzono nową konwersację"
+    }, status=status.HTTP_201_CREATED)
+
+@api_view(["GET"])
+@authentication_classes([APIKeyAuthentication, SessionAuthentication])
+@permission_classes([IsAuthenticated])
+@schema(ManualParametersSchema(
+    query_parameters=[
+        {'name': 'regex', 'type': 'string', 'required': True, 'description': 'Wyrażenie regex do przeszukiwania treści wiadomości.'},
+        {'name': 'api_key', 'type': 'string', 'description': 'Klucz uwierzytelniania'}
+    ]
+))
+def api_get_filtered_messages(request, conversation_id):
+    """
+    Zwraca wiadomości z danej konwersacji po przefiltowaniu regexem.
+
+    Query Parameters:
+    - regex: (query, required) Wyrażenie regex do przeszukiwania treści wiadomości.
+    - api_key: (query/header) Klucz uwierzytelniania
+    """
+    user = request.user
+
+    conversation = get_object_or_404(
+        Conversation,
+        id=conversation_id,
+        participants=user,
+    )
+
+    regex = request.GET.get('regex')
+    if not regex:
+        return Response({"detail": "brak parametru regex"}, status=status.HTTP_400_BAD_REQUEST)
+
+    messages_qs = conversation.messages.filter(content__regex=regex).select_related('sender').order_by('timestamp')
+    
+    results = []
+    for m in messages_qs:
+        results.append({
+            "id": m.id,
+            "content": m.content,
+            "timestamp": m.timestamp.isoformat(),
+            "sender": {
+                "id": m.sender.id,
+                "username": m.sender.username,
+            }
+        })
+
+    return Response({
+        "messages": results,
+        "conversation_id": conversation.id,
+        "regex": regex
+    }, status=status.HTTP_200_OK)
+
+@api_view(["GET"])
+@authentication_classes([APIKeyAuthentication, SessionAuthentication])
+@permission_classes([IsAuthenticated])
+@schema(ManualParametersSchema(
+    query_parameters=[
+        {'name': 'date', 'type': 'string', 'required': True, 'description': 'Data w formacie ISO 8601'},
+        {'name': 'api_key', 'type': 'string', 'description': 'Klucz uwierzytelniania'}
+    ]
+))
+def api_get_messages_newer_than(request, conversation_id):
+    """
+    Zwraca wiadomości z danej konwersacji przefiltrowane po dacie.
+
+    Query Parameters:
+    - date: (query, required) Data w formacie ISO 8601
+    - api_key: (query/header) Klucz uwierzytelniania
+    """
+    user = request.user
+
+    conversation = get_object_or_404(
+        Conversation,
+        id=conversation_id,
+        participants=user,
+    )
+
+    date_str = request.GET.get('date')
+    if not date_str:
+        return Response({"detail": "brak parametru date"}, status=status.HTTP_400_BAD_REQUEST)
+
+    date_obj = parse_datetime(date_str)
+    if not date_obj:
+        return Response({"detail": "Bład w formacie daty."}, status=status.HTTP_400_BAD_REQUEST)
+
+    if timezone.is_naive(date_obj):
+        date_obj = timezone.make_aware(date_obj)
+
+    messages_qs = conversation.messages.filter(timestamp__gt=date_obj).select_related('sender').order_by('timestamp')
+
+    results = []
+    for m in messages_qs:
+        results.append({
+            "id": m.id,
+            "content": m.content,
+            "timestamp": m.timestamp.isoformat(),
+            "sender": {
+                "id": m.sender.id,
+                "username": m.sender.username,
+            }
+        })
+
+    return Response({
+        "messages": results,
+        "conversation_id": conversation.id,
+        "date": date_str
+    }, status=status.HTTP_200_OK)
+
+@api_view(["POST"])
+@authentication_classes([APIKeyAuthentication, SessionAuthentication])
+@permission_classes([IsAuthenticated])
+@schema(ManualParametersSchema(
+    query_parameters=[
+        {'name': 'api_key', 'type': 'string', 'description': 'Klucz uwierzytelniania'}
+    ]
+))
+def api_mark_message_seen(request, message_id):
+    """
+    Oznacza daną wiadomość jako przeczytaną.
+
+    Query Parameters:
+    - api_key: Klucz uwierzytelniania
+    """
+    user = request.user
+    message = get_object_or_404(Message, id=message_id, conversation__participants=user)
+
+    if message.sender != user:
+        message.is_read = True
+        message.save()
+        MessageReadStatus.objects.get_or_create(message=message, user=user)
+
+    return Response({"detail": "Oznaczono wiadomość jako przeczytaną"}, status=status.HTTP_200_OK)
+
+@api_view(["POST"])
+@authentication_classes([APIKeyAuthentication, SessionAuthentication])
+@permission_classes([IsAuthenticated])
+@schema(ManualParametersSchema(
+    query_parameters=[
+        {'name': 'api_key', 'type': 'string', 'description': 'Klucz uwierzytelniania'}
+    ]
+))
+def api_mark_conversation_seen(request, conversation_id):
+    """
+    Oznacza konwersację jako przeczytaną.
+
+    Query Parameters:
+    - api_key: Klucz uwierzytelniania
+    """
+    user = request.user
+    conversation = get_object_or_404(Conversation, id=conversation_id, participants=user)
+
+    unread_messages = conversation.messages.filter(is_read=False).exclude(sender=user)
+
+    for message in unread_messages:
+        message.is_read = True
+        message.save()
+        MessageReadStatus.objects.get_or_create(message=message, user=user)
+
+    return Response({"detail": "Wiadomości oznaczone jako przeczytane"}, status=status.HTTP_200_OK)
+
+
+@api_view(["GET", "PATCH"])
+@authentication_classes([APIKeyAuthentication, SessionAuthentication])
+@permission_classes([IsAuthenticated])
+@schema(ManualParametersSchema(
+    query_parameters=[
+        {'name': 'api_key', 'type': 'string', 'description': 'Klucz uwierzytelniania'}
+    ],
+    request_body_fields=[
+        {'name': 'username', 'type': 'string', 'description': 'Nowy username.'},
+        {'name': 'email', 'type': 'string', 'description': 'Nowy email.'},
+        {'name': 'first_name', 'type': 'string', 'description': 'Nowe imię.'},
+        {'name': 'last_name', 'type': 'string', 'description': 'Nowe nazwisko.'},
+        {'name': 'generate_api_key', 'type': 'boolean', 'description': 'Nowy klucz API? (bool).'},
+    ]
+))
+def api_profile(request):
+    """
+    Zwraca lub zmienia dane profilu użytkownika
+
+    Query Parameters:
+    - api_key: (query/header) Klucz uwierzytelniania
+
+    PATCH Request Body Fields:
+    - username: (optional) Nowy username.
+    - email: (optional) Nowy email.
+    - first_name: (optional) Nowe imię.
+    - last_name: (optional) Nowe nazwisko.
+    - generate_api_key: (optional) Nowy klucz API? (bool).
+    """
+    user = request.user
+    user_settings, _ = UserSettings.objects.get_or_create(user=user, defaults={'email': user.email})
+
+    if request.method == "PATCH":
+        data = request.data
+        
+        with transaction.atomic():
+            if 'username' in data:
+                new_username = data['username']
+                if new_username != user.username:
+                    if User.objects.filter(username=new_username).exclude(id=user.id).exists():
+                        return Response({"detail": "Niedostępna nazwa użytkownika"}, status=status.HTTP_400_BAD_REQUEST)
+                    user.username = new_username
+            
+            if 'email' in data:
+                user.email = data['email']
+                user_settings.email = data['email']
+            
+            if 'first_name' in data:
+                user.first_name = data['first_name']
+            
+            if 'last_name' in data:
+                user.last_name = data['last_name']
+            
+            if data.get('generate_api_key') is True or str(data.get('generate_api_key')).lower() == 'true':
+                user_settings.api_key = secrets.token_urlsafe(32)
+            
+            user.save()
+            user_settings.save()
+    
+    payload = {
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "date_joined": user.date_joined.isoformat(),
+        "last_login": user.last_login.isoformat() if user.last_login else None,
+        "api_key": user_settings.api_key,
+    }
+    
+    return Response(payload, status=status.HTTP_200_OK)
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+@schema(ManualParametersSchema(
+    query_parameters=[
+        {'name': 'username', 'type': 'string', 'required': True, 'description': 'Nazwa szukanego użytkownik.a'},
+    ]
+))
+def api_find_user(request):
+    """
+    Wyszukuje i zwraca informacje o użytkowniku po nazwie. Nie wymaga uwierzytelniania.
+
+    Query Parameters:
+    - username: (query, required) Nazwa szukanego użytkownik.a
+    """
+    username = request.GET.get('username')
+    if not username:
+        return Response({"detail": "brak parametru username"}, status=status.HTTP_400_BAD_REQUEST)
+
+    user = get_object_or_404(User, username=username)
+
+    payload = {
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "date_joined": user.date_joined.isoformat(),
+        "last_login": user.last_login.isoformat() if user.last_login else None,
+    }
+
+    return Response(payload, status=status.HTTP_200_OK)
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def api_user_last_login(request, user_id):
+    """
+    Zwraca informację o ostatnim czasie logowania użytkownika. Nie wymaga uwierzytelniania.
+    """
+    user = get_object_or_404(User, id=user_id)
+    return Response({
+        "id": user.id,
+        "username": user.username,
+        "last_login": user.last_login.isoformat() if user.last_login else None
+    }, status=status.HTTP_200_OK)
