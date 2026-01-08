@@ -343,3 +343,38 @@ def api_send_message(request, conversation_id):
     }
 
     return Response(payload, status=status.HTTP_201_CREATED)
+
+@api_view(["POST"])
+def api_update_public_key(request):
+    api_key = (
+        request.headers.get("X-API-Key")
+        or request.GET.get("api_key")
+        or None
+    )
+
+    if not api_key:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.lower().startswith("api-key "):
+            api_key = auth_header.split(" ", 1)[1].strip()
+
+    if not api_key:
+        return Response({"detail": "API key required"}, status=status.HTTP_401_UNAUTHORIZED)
+
+    try:
+        user_settings = UserSettings.objects.select_related("user").get(api_key=api_key)
+        user = user_settings.user
+    except UserSettings.DoesNotExist:
+        return Response({"detail": "Invalid API key"}, status=status.HTTP_401_UNAUTHORIZED)
+
+    public_key_pem = request.data.get('public_key')
+    user_settings.public_key = public_key_pem
+    user_settings.save()
+    return Response({"status": "Public key updated"})
+
+@api_view(["GET"])
+def api_get_public_key(request, user_id):
+    try:
+        target_settings = UserSettings.objects.get(user_id=user_id)
+        return Response({"public_key": target_settings.public_key})
+    except UserSettings.DoesNotExist:
+        return Response({"error": "User or key not found"}, status=404)
