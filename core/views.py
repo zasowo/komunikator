@@ -33,21 +33,33 @@ def profile_settings(request):
             user_settings.save()
             messages.success(request, 'A new API key has been generated.')
             return redirect('profile_settings')
-        else:
-            form = UserUpdateForm(request.POST, instance=request.user)
-            if form.is_valid():
-                form.save()
-                if user_settings.email != request.user.email:
-                    user_settings.email = request.user.email
-                    user_settings.save(update_fields=['email'])
-                messages.success(request, 'Your profile has been updated!')
-                return redirect('profile_settings')
+        
+        if request.POST.get('action_type') == 'save_client_generated_key':
+            pem_data = request.POST.get('public_key_pem')
+            if pem_data and "-----BEGIN PUBLIC KEY-----" in pem_data:
+                user_settings.public_key = pem_data
+                user_settings.save()
+                messages.success(request, 'Success! Your new PUBLIC KEY has been saved on the server. Make sure you have kept the downloaded private key!')
+            else:
+                messages.error(request, 'Error: The server received an invalid public key format.')
+
+            return redirect('profile_settings')
+   
+        form = UserUpdateForm(request.POST, instance=request.user)
+        if form.is_valid():
+            form.save()
+            if user_settings.email != request.user.email:
+                user_settings.email = request.user.email
+                user_settings.save(update_fields=['email'])
+            messages.success(request, 'Your profile has been updated!')
+            return redirect('profile_settings')
     else:
         form = UserUpdateForm(instance=request.user)
 
     context = {
         'form': form,
         'api_key': user_settings.api_key,
+        'user_public_key': user_settings.public_key,
     }
     return render(request, 'profile/profile_settings.html', context)
 
