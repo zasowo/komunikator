@@ -32,7 +32,9 @@ class Message(models.Model):
         related_name='sent_messages',
         on_delete=models.CASCADE
     )
-    content = models.TextField()
+    ciphertext = models.TextField(null=True, blank=True)#TODO TEMPORRARY BLANK|
+    encrypted_aes_key = models.TextField(null=True, blank=True) #TODO TEMPORRARY BLANK|
+    iv = models.CharField(max_length=255, blank=True, null=True)
     timestamp = models.DateTimeField(default=timezone.now)
     is_read = models.BooleanField(default=False)
 
@@ -40,7 +42,7 @@ class Message(models.Model):
         ordering = ['timestamp']
 
     def __str__(self):
-        return f"{self.sender.username}: {self.content[:50]}"
+        return f"{self.sender.username}: {self.ciphertext[:50]}"
 
 
 class MessageReadStatus(models.Model):

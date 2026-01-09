@@ -50,21 +50,20 @@
 
         <!-- RSA -->
         <hr class="my-4" />
-        <h4 class="mb-3">Klucze szyfrujące (Zero-Trust RSA)</h4>
+        <h4 class="mb-3">Encryption Keys.</h4>
 
         <div class="mb-3">
-            <label class="form-label">Twój obecny Klucz Publiczny (na serwerze)</label>
+            <label class="form-label">Your current Public Key</label>
             <textarea class="form-control font-monospace" rows="6" readonly style="font-size: 0.8em; background-color: #f8f9fa;">{{ user_public_key|default:'Brak wygenerowanego klucza.' }}</textarea>
-            <div class="form-text">Ten klucz jest widoczny dla serwera i innych użytkowników (jeśli udostępnisz).</div>
+            <div class="form-text">This key is not confidential.</div>
         </div>
 
         <div class="card bg-light border-warning mb-3">
             <div class="card-body">
-                <h5 class="card-title">Generowanie nowej pary kluczy</h5>
+                <h5 class="card-title">Generating a new key pair</h5>
                 <p class="card-text small text-muted">
-                    Klikając poniżej, Twoja przeglądarka wygeneruje nową parę kluczy RSA (2048-bit).
-                    <strong>Klucz Prywatny</strong> zostanie natychmiast pobrany na Twój dysk. Serwer go nigdy nie zobaczy.
-                    Tylko <strong>Klucz Publiczny</strong> zostanie wysłany i zapisany na serwerze.
+                    By clicking below, your browser will generate a new RSA key pair.
+                    <strong>Save private key</strong> and keep it <strong>secret</strong>.
                 </p>
 
                 <div id="js-status-container" style="display: none;" class="alert alert-info d-flex align-items-center">
