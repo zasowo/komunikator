@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Komunikator API – Swagger UI</title>
+    <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
+    <style>
+      body { margin: 0; background: #fff; }
+    </style>
+  </head>
+  <body>
+    <div id="swagger-ui"></div>
+
+    <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+    <script>
+      window.onload = function () {
+        const schemaUrl = "{{ schema_url }}";
+        fetch(schemaUrl)
+          .then((resp) => resp.json())
+          .then((spec) => {
+            spec.components = spec.components || {};
+            spec.components.securitySchemes = spec.components.securitySchemes || {};
+            spec.components.securitySchemes.ApiKeyAuth = {
+              type: "apiKey",
+              in: "header",
+              name: "X-API-Key",
+              description: "Provide your API key. Example: abc123..."
+            };
+
+            spec.components.securitySchemes.ApiKeyQuery = {
+              type: "apiKey",
+              in: "query",
+              name: "api_key",
+              description: "Alternative way: provide the API key as a query parameter"
+            };
+
+            spec.security = spec.security || [
+              { ApiKeyAuth: [] },
+              { ApiKeyQuery: [] }
+            ];
+
+            window.ui = SwaggerUIBundle({
+              spec: spec,
+              dom_id: '#swagger-ui',
+              presets: [
+                SwaggerUIBundle.presets.apis,
+                SwaggerUIBundle.SwaggerUIStandalonePreset
+              ],
+              layout: 'BaseLayout',
+              persistAuthorization: true
+            });
+          })
+          .catch(() => {
+            window.ui = SwaggerUIBundle({
+              url: schemaUrl,
+              dom_id: '#swagger-ui',
+              presets: [
+                SwaggerUIBundle.presets.apis,
+                SwaggerUIBundle.SwaggerUIStandalonePreset
+              ],
+              layout: 'BaseLayout'
+            });
+          });
+      };
+    </script>
+  </body>
+</html>

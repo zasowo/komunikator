@@ -28,9 +28,20 @@
     </style>
 </head>
 <body>
-    <h1>You want to message privately? Join us.</h1>
-    <a href="/register/" class="btn">Register</a>
-    <a href="/login/" class="btn">Log in</a>
+    {% if user.is_authenticated %}
+        <h1>Hello, {{user.username}}</h1>
+    {% else %}
+        <h1>You want to message privately? Join us.</h1>
+        <a href="/register/" class="btn">Register</a>
+    {% endif %}
     <a href="/aboutus/" class="btn">About us</a>
+    {% if user.is_authenticated %}
+        <a href="/inbox/" class="btn">Inbox</a>
+        <a href="/logout/" class="btn">Logout</a>
+        <a href="/profile/" class="btn">Profile settings</a>
+        <a href="/logout/" class="btn">Logout</a>
+    {% else %}
+        <a href="/login/" class="btn">Log in</a>
+    {% endif %}
 </body>
 </html>

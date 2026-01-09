@@ -1,0 +1,91 @@
+{% extends 'base.html' %}
+
+{% block title %}Chat with {{ other_participant.username }}{% endblock %}
+
+{% block content %}
+<div class="card mb-3 border-info">
+    <div class="card-body">
+        <div class="input-group input-group-sm">
+            <label class="input-group-text" for="private-key-file">Load PK .pem</label>
+            <input type="file" class="form-control" id="private-key-file" accept=".pem">
+        </div>
+        <div id="decryption-status" class="form-text mt-2">Load your private key to decrypt messages.</div>
+    </div>
+</div>
+
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-8 offset-md-2">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <a href="{% url 'inbox' %}" class="text-white text-decoration-none">← Back</a>
+                            | Chat with {{ other_participant.username }}
+                        </h5>
+                    </div>
+                </div>
+                
+                <div class="card-body" id="message-container" style="height: 400px; overflow-y: auto;">
+                    {% for message in messages %}
+                        <div class="message mb-3 {% if message.sender == user %}text-end{% endif %}">
+                            <div class="d-inline-block" style="max-width: 70%;">
+                                <div class="p-2 rounded {% if message.sender == user %}bg-primary text-white{% else %}bg-light{% endif %}">
+                                    <strong>{{ message.sender.username }}</strong><br>
+                                    {% if message.sender == user %}
+                                        <span class="small">Your secure message</span>
+                                    {% else %}
+                                    <span class="encrypted-msg" 
+                                        data-ciphertext="{{ message.ciphertext }}" 
+                                        data-aes-key="{{ message.encrypted_aes_key }}" 
+                                        data-iv="{{ message.iv }}">
+                                        {{ message.ciphertext|truncatechars:20 }}
+                                    </span>
+                                    {% endif %}
+                                </div>
+                                <small class="text-muted">{{ message.timestamp|date:"M d, Y H:i" }}</small>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+                <div class="card-footer">
+                    <form method="post" id="message-form">
+                        {% csrf_token %}
+                        {{ form.ciphertext }}
+                        {{ form.encrypted_aes_key }}
+                        {{ form.iv }}
+                        
+                        <div class="input-group">
+                            {{ form.raw_message }}
+                            <button type="button" id="send-secure-btn" class="btn btn-primary">Send</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% load static %}
+<script>
+    // Te dane są potrzebne dla skryptu zewnętrznego
+    const CHAT_CONFIG = {
+        conversationId: {{ conversation.id }},
+        lastMessageId: {{ messages.last.id|default:0 }},
+        currentUserId: {{ user.id }},
+        urlGetNewMessages: "{% url 'get_new_messages' conversation.id %}"
+    };
+</script>
+<script src="{% static 'js/chat_refresh.js' %}"></script>
+
+<!-- ENCRYPTING NEW MESSAGE -->
+{% load static %}
+<script>
+    const RECIPIENT_PUBLIC_KEY = `{{ other_participant.usersettings.public_key|safe }}`;
+</script>
+
+<script src="{% static 'js/crypto_encrypt.js' %}"></script>
+<script src="{% static 'js/crypto_decrypt.js' %}"></script>
+
+
+{% endblock %}
