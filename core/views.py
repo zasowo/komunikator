@@ -282,7 +282,6 @@ def api_unread_messages(request):
 @authentication_classes([])
 @permission_classes([AllowAny])
 def api_send_message(request, conversation_id):
-    # 1. Autoryzacja za pomocą klucza API (Zadanie 10)
     api_key = (
         request.headers.get("X-API-Key")
         or request.data.get("api_key")  # DRF automatycznie parsuje request.data
@@ -303,27 +302,22 @@ def api_send_message(request, conversation_id):
     except UserSettings.DoesNotExist:
         return Response({"detail": "Invalid API key"}, status=status.HTTP_401_UNAUTHORIZED)
 
-    # 2. Pobranie konwersji i sprawdzenie uczestnictwa
     conversation = get_object_or_404(
         Conversation,
         id=conversation_id,
         participants=user,
     )
 
-    # 3. Wyciągnięcie zaszyfrowanych danych (E2EE)
-    # Zamiast 'content' pobieramy trzy kluczowe pola:
     ciphertext = request.data.get("ciphertext")
     encrypted_aes_key = request.data.get("encrypted_aes_key")
     iv = request.data.get("iv")
 
-    # Walidacja danych (Zadanie 9 - integralność danych)
     if not all([ciphertext, encrypted_aes_key, iv]):
         return Response(
             {"detail": "E2EE requires ciphertext, encrypted_aes_key, and iv."}, 
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    # 4. Tworzenie zaszyfrowanego dokumentu w MongoDB (Zadanie 7)
     msg = Message.objects.create(
         conversation=conversation,
         sender=user,
