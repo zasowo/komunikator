@@ -13,7 +13,23 @@
     <div class="mb-5">
         <h3>About app</h3>
         <p>
-            The goal of this project is to provide a clean, secure, and easy-to-use platform for private communication.
+            This is a secure communication platform built with a Zero-Trust security architecture. The application ensures that the server never has access to the plaintext content of messages by implementing true End-to-End Encryption (E2EE).
+            Core Concept: Zero-Trust. In this model, the server is treated as a potentially compromised or untrusted entity. It only acts as a storage and relay for encrypted "blobs". All cryptographic operations (encryption and decryption) happen exclusively in the user's browser using the Web Crypto API.
+            Tech Stack
+            Backend: Django (Python)
+            Frontend: JavaScript (Web Crypto API)
+            Database: SQLite (Development) / PostgreSQL (Production)
+            Encryption: Hybrid RSA-OAEP (2048-bit) + AES-GCM (256-bit)
+        </p>
+    </div>
+
+        <div class="mb-5">
+        <h3>Tech Stack</h3>
+        <p>
+            Backend: Django (Python)
+            Frontend: JavaScript (Web Crypto API)
+            Database: SQLite (Development) / PostgreSQL (Production)
+            Encryption: Hybrid RSA-OAEP (2048-bit) + AES-GCM (256-bit)
         </p>
     </div>
 
