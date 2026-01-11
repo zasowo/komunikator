@@ -18,4 +18,8 @@ urlpatterns = [
     path('api/conversations/<int:conversation_id>/send/', views.api_send_message, name='api_send_message'),
 
     path('profile/', views.profile_settings, name='profile_settings'),
+    path('friends/', views.user_list_invite, name='user_list_invite'),
+    path('friends/add/<int:user_id>/', views.add_friend, name='add_friend'),
+    path('friends/display/', views.display_friends, name='display_friends'),
+    path('friends/remove/<int:user_id>/', views.remove_friend, name='remove_friend')
 ]
