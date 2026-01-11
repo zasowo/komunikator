@@ -9,10 +9,13 @@
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <div class="container">
-            <a class="navbar-brand" href="/">My App</a>
+            <a class="navbar-brand" href="/">Zero-Trust E2EE Messenger</a>
             <div class="navbar-nav ms-auto">
                 {% if user.is_authenticated %}
-                    <a class="nav-link" href="{% url 'inbox' %}">Messages</a>
+                    <a class="nav-link" href="{% url 'aboutus' %}">About Us</a>
+                    <a class="nav-link" href="{% url 'profile_settings' %}">Profile Settings</a>
+                    <a class="nav-link" href="{% url 'display_friends' %}">My Friends</a>
+                    <a class="nav-link" href="{% url 'inbox' %}">Inbox</a>
                     <a class="nav-link" href="{% url 'logout' %}">Logout</a>
                 {% else %}
                     <a class="nav-link" href="{% url 'login' %}">Login</a>

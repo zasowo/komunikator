@@ -11,10 +11,100 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny
-from .models import Conversation, Message, MessageReadStatus, UserSettings
+from .models import Conversation, Message, MessageReadStatus, UserSettings, UserFriendsData
 from .forms import MessageForm
 from .forms import UserUpdateForm
 import json
+
+@login_required(login_url='/login/')
+def remove_friend(request, user_id):
+    if request.method == "POST":
+        other_user = get_object_or_404(User, id=user_id)
+
+        friends_data = get_object_or_404(
+            UserFriendsData,
+            user=request.user
+        )
+
+        friends_data.friends.remove(other_user)
+
+        other_friends_data = UserFriendsData.objects.filter(
+            user=other_user
+        ).first()
+
+        if other_friends_data:
+            other_friends_data.friends.remove(request.user)
+
+    return redirect('display_friends')
+
+@login_required(login_url='/login/')
+def display_friends(request):
+    users = UserFriendsData.objects.get(user=request.user).friends.all()
+
+    query = request.GET.get('q', '')
+    if query:
+        users = users.filter(
+            Q(username__icontains=query) |
+            Q(first_name__icontains=query) |
+            Q(last_name__icontains=query)
+        )
+
+    context = {
+        'users': users,
+        'query': query
+    }
+
+    return render(request, 'friends/user_list_added.html', context)
+
+@login_required(login_url='/login/')
+def add_friend(request, user_id):
+    other_user = get_object_or_404(User, id=user_id)
+
+    if other_user == request.user:
+        return redirect('user_list_invite')
+
+    friends_data, created = UserFriendsData.objects.get_or_create(
+        user=request.user
+    )
+
+    if friends_data.friends.filter(id=other_user.id).exists():
+        return redirect('display_friends')
+
+    friends_data.friends.add(other_user)
+
+    other_friends_data, _ = UserFriendsData.objects.get_or_create(
+        user=other_user
+    )
+    other_friends_data.friends.add(request.user)
+
+    return redirect('display_friends')
+
+@login_required(login_url='/login/')
+def user_list_invite(request):
+    friends_data, _ = UserFriendsData.objects.get_or_create(
+        user=request.user
+    )
+
+    users = User.objects.exclude(
+        id__in=friends_data.friends.values_list('id', flat=True)
+    ).exclude(
+        id=request.user.id
+    )
+
+    query = request.GET.get('q', '')
+    if query:
+        users = users.filter(
+            Q(username__icontains=query) |
+            Q(first_name__icontains=query) |
+            Q(last_name__icontains=query)
+        )
+
+    context = {
+        'users': users,
+        'query': query
+    }
+
+    return render(request, 'friends/user_list_invite.html', context)
 
 @login_required(login_url='/login/')
 def profile_settings(request):
@@ -65,7 +155,15 @@ def profile_settings(request):
 
 
 def home(request):
-    return render(request, 'home.html')
+    context = {}
+    if request.user.is_authenticated:
+        friends_data, _ = UserFriendsData.objects.get_or_create(user=request.user)
+        friends_count = friends_data.friends.count()
+
+        context.update({
+            'friends_count': friends_count,
+        })
+    return render(request, 'home.html', context)
 
 def aboutus(request):
     return render(request, 'aboutus.html')

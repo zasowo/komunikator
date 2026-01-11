@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+
+{% block title %}My Friends{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-8 offset-md-2">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2>My Friends</h2>
+                <a href="{% url 'user_list_invite' %}" class="btn btn-primary">Add Friends</a>
+                <a href="{% url 'home' %}" class="btn btn-secondary">Home</a>
+            </div>
+
+            <form method="get" class="mb-3">
+                <div class="input-group">
+                    <input
+                        type="text"
+                        name="q"
+                        class="form-control"
+                        placeholder="Type a name..."
+                        value="{{ query }}"
+                    >
+                    <button class="btn btn-outline-primary" type="submit">
+                        Search
+                    </button>
+                </div>
+            </form>
+
+            {% if users %}
+                <div class="list-group">
+                    {% for user_item in users %}
+                        <div class="list-group-item d-flex justify-content-between align-items-center">
+                            <div class="flex-grow-1">
+                                <a href="{% url 'start_conversation' user_item.id %}" class="text-decoration-none text-dark">
+                                    <h5 class="mb-1">{{ user_item.username }}</h5>
+                                    <p class="mb-1 text-muted">
+                                        {% if user_item.first_name or user_item.last_name %}
+                                            {{ user_item.first_name }} {{ user_item.last_name }}
+                                        {% else %}
+                                            Click to message your friend
+                                        {% endif %}
+                                    </p>
+                                </a>
+                             </div>
+
+                            <form method="post" action="{% url 'remove_friend' user_item.id %}">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-sm btn-danger">
+                                    Remove
+                                </button>
+                            </form>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="alert alert-info">
+                    {% if query %}
+                        <p>No users found for "{{ query }}".</p>
+                    {% else %}
+                        <p>You have no friends, add some!</p>
+                    {% endif %}
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

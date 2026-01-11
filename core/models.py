@@ -74,3 +74,10 @@ class UserSettings(models.Model):
 
     def get_username(self):
         return self.user.username
+
+class UserFriendsData(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    friends = models.ManyToManyField(User, related_name='friend_of')
+
+    def __str__(self):
+        return f"Friends {self.user.username}"
