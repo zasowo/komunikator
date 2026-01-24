@@ -4,56 +4,10 @@ from core.models import Conversation, Message, MessageReadStatus, UserSettings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
-from core.rsa_utils.rsa_manager import RSAKeyManager
 import base64
 import json
 
 
-class MessageFilterAPITest(TestCase):
-    def setUp(self):
-        self.user = User.objects.create_user(username='testuser', password='password')
-        self.user_settings = UserSettings.objects.create(user=self.user, api_key='test-api-key')
-        self.other_user = User.objects.create_user(username='otheruser', password='password')
-
-        self.conversation = Conversation.objects.create()
-        self.conversation.participants.add(self.user, self.other_user)
-
-        Message.objects.create(conversation=self.conversation, sender=self.user, content='Hello world')
-        Message.objects.create(conversation=self.conversation, sender=self.other_user, content='How are you?')
-        Message.objects.create(conversation=self.conversation, sender=self.user, content='I am fine, thanks!')
-        Message.objects.create(conversation=self.conversation, sender=self.other_user, content='Glad to hear that.')
-
-    def test_filter_messages_by_regex(self):
-        url = reverse('api_get_filtered_messages', kwargs={'conversation_id': self.conversation.id})
-
-        # Test filtering for 'fine'
-        response = self.client.get(url, {'regex': 'fine', 'api_key': 'test-api-key'})
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(len(data['messages']), 1)
-        self.assertEqual(data['messages'][0]['content'], 'I am fine, thanks!')
-
-        # Test filtering with more complex regex
-        response = self.client.get(url, {'regex': 'H[ae]llo|How', 'api_key': 'test-api-key'})
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(len(data['messages']), 2)
-
-        # Test without regex param
-        response = self.client.get(url, {'api_key': 'test-api-key'})
-        self.assertEqual(response.status_code, 400)
-
-        # Test with invalid API key
-        response = self.client.get(url, {'regex': 'fine', 'api_key': 'wrong-key'})
-        self.assertEqual(response.status_code, 401)
-
-    def test_unauthorized_conversation_access(self):
-        unauthorized_user = User.objects.create_user(username='unauthorized', password='password')
-        UserSettings.objects.create(user=unauthorized_user, api_key='unauthorized-key')
-
-        url = reverse('api_get_filtered_messages', kwargs={'conversation_id': self.conversation.id})
-        response = self.client.get(url, {'regex': 'fine', 'api_key': 'unauthorized-key'})
-        self.assertEqual(response.status_code, 404)
 
 class StartConversationAPITest(TestCase):
     def setUp(self):
@@ -154,11 +108,11 @@ class MessageNewerThanAPITest(TestCase):
         from django.utils import timezone
         import time
 
-        self.m1 = Message.objects.create(conversation=self.conversation, sender=self.user, content='Message 1')
+        self.m1 = Message.objects.create(conversation=self.conversation, sender=self.user, ciphertext='Message 1', encrypted_aes_key='k1', iv='i1')
         time.sleep(0.01) # ensure different timestamps
-        self.m2 = Message.objects.create(conversation=self.conversation, sender=self.other_user, content='Message 2')
+        self.m2 = Message.objects.create(conversation=self.conversation, sender=self.other_user, ciphertext='Message 2', encrypted_aes_key='k2', iv='i2')
         time.sleep(0.01)
-        self.m3 = Message.objects.create(conversation=self.conversation, sender=self.user, content='Message 3')
+        self.m3 = Message.objects.create(conversation=self.conversation, sender=self.user, ciphertext='Message 3', encrypted_aes_key='k3', iv='i3')
 
     def test_get_messages_newer_than(self):
         url = reverse('api_get_messages_newer_than', kwargs={'conversation_id': self.conversation.id})
@@ -171,8 +125,8 @@ class MessageNewerThanAPITest(TestCase):
         data = response.json()
         # Should return m2 and m3
         self.assertEqual(len(data['messages']), 2)
-        self.assertEqual(data['messages'][0]['content'], 'Message 2')
-        self.assertEqual(data['messages'][1]['content'], 'Message 3')
+        self.assertEqual(data['messages'][0]['ciphertext'], 'Message 2')
+        self.assertEqual(data['messages'][1]['ciphertext'], 'Message 3')
 
     def test_get_messages_newer_than_invalid_date(self):
         url = reverse('api_get_messages_newer_than', kwargs={'conversation_id': self.conversation.id})
@@ -193,47 +147,66 @@ class EditMessageAPITest(TestCase):
         self.message = Message.objects.create(
             conversation=self.conversation,
             sender=self.user,
-            content='Original content'
+            ciphertext='Original ciphertext',
+            encrypted_aes_key='original_key',
+            iv='original_iv'
         )
 
     def test_edit_message_success(self):
         url = reverse('api_edit_message', kwargs={'message_id': self.message.id})
-        new_content = 'Edited content'
+        new_ciphertext = 'Edited ciphertext'
+        new_key = 'new_key'
+        new_iv = 'new_iv'
         response = self.client.post(
             f"{url}?api_key=test-api-key-edit",
-            data={'content': new_content},
+            data={
+                'ciphertext': new_ciphertext,
+                'encrypted_aes_key': new_key,
+                'iv': new_iv
+            },
             content_type='application/json'
         )
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(data['content'], new_content)
+        self.assertEqual(data['ciphertext'], new_ciphertext)
+        self.assertEqual(data['encrypted_aes_key'], new_key)
+        self.assertEqual(data['iv'], new_iv)
         self.assertIsNotNone(data['edited_at'])
 
         # Verify in DB
         self.message.refresh_from_db()
-        self.assertEqual(self.message.content, new_content)
+        self.assertEqual(self.message.ciphertext, new_ciphertext)
+        self.assertEqual(self.message.encrypted_aes_key, new_key)
+        self.assertEqual(self.message.iv, new_iv)
         self.assertIsNotNone(self.message.edited_at)
 
     def test_edit_message_unauthorized_user(self):
         # other_user tries to edit self.user's message
         url = reverse('api_edit_message', kwargs={'message_id': self.message.id})
-        new_content = 'Hacker edit'
         response = self.client.post(
             f"{url}?api_key=other-api-key-edit",
-            data={'content': new_content},
+            data={
+                'ciphertext': 'Hacker edit',
+                'encrypted_aes_key': 'hacker_key',
+                'iv': 'hacker_iv'
+            },
             content_type='application/json'
         )
 
         self.assertEqual(response.status_code, 403)
         self.message.refresh_from_db()
-        self.assertEqual(self.message.content, 'Original content')
+        self.assertEqual(self.message.ciphertext, 'Original ciphertext')
 
     def test_edit_message_invalid_api_key(self):
         url = reverse('api_edit_message', kwargs={'message_id': self.message.id})
         response = self.client.post(
             f"{url}?api_key=wrong-key",
-            data={'content': 'Something'},
+            data={
+                'ciphertext': 'Something',
+                'encrypted_aes_key': 'key',
+                'iv': 'iv'
+            },
             content_type='application/json'
         )
         self.assertEqual(response.status_code, 401)
@@ -242,7 +215,11 @@ class EditMessageAPITest(TestCase):
         url = reverse('api_edit_message', kwargs={'message_id': 9999})
         response = self.client.post(
             f"{url}?api_key=test-api-key-edit",
-            data={'content': 'Something'},
+            data={
+                'ciphertext': 'Something',
+                'encrypted_aes_key': 'key',
+                'iv': 'iv'
+            },
             content_type='application/json'
         )
         self.assertEqual(response.status_code, 404)
@@ -251,20 +228,27 @@ class EditMessageAPITest(TestCase):
         url = reverse('api_edit_message', kwargs={'message_id': self.message.id})
         response = self.client.post(
             f"{url}?api_key=test-api-key-edit",
-            data={'content': ''},
+            data={
+                'ciphertext': '',
+                'encrypted_aes_key': 'key',
+                'iv': 'iv'
+            },
             content_type='application/json'
         )
         self.assertEqual(response.status_code, 400)
 
     def test_edit_deleted_message(self):
         self.message.is_deleted = True
-        self.message.content = "<message deleted>"
         self.message.save()
 
         url = reverse('api_edit_message', kwargs={'message_id': self.message.id})
         response = self.client.post(
             f"{url}?api_key=test-api-key-edit",
-            data={'content': 'Try to edit deleted'},
+            data={
+                'ciphertext': 'Try to edit deleted',
+                'encrypted_aes_key': 'key',
+                'iv': 'iv'
+            },
             content_type='application/json'
         )
         self.assertEqual(response.status_code, 400)
@@ -283,7 +267,9 @@ class DeleteMessageAPITest(TestCase):
         self.message = Message.objects.create(
             conversation=self.conversation,
             sender=self.user,
-            content='Delete me'
+            ciphertext='Delete me',
+            encrypted_aes_key='key',
+            iv='iv'
         )
 
     def test_delete_message_success(self):
@@ -291,12 +277,8 @@ class DeleteMessageAPITest(TestCase):
         response = self.client.delete(f"{url}?api_key=test-api-key-delete")
 
         self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(data['content'], "<message deleted>")
-        self.assertTrue(data['is_deleted'])
 
         self.message.refresh_from_db()
-        self.assertEqual(self.message.content, "<message deleted>")
         self.assertTrue(self.message.is_deleted)
 
     def test_delete_message_unauthorized(self):
@@ -306,19 +288,19 @@ class DeleteMessageAPITest(TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.message.refresh_from_db()
-        self.assertEqual(self.message.content, 'Delete me')
+        self.assertEqual(self.message.ciphertext, 'Delete me')
         self.assertFalse(self.message.is_deleted)
 
     def test_delete_already_deleted_message(self):
         self.message.is_deleted = True
-        self.message.content = "<message deleted>"
         self.message.save()
 
         url = reverse('api_delete_message', kwargs={'message_id': self.message.id})
         response = self.client.delete(f"{url}?api_key=test-api-key-delete")
 
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.json()['detail'], "Message is already deleted")
+        self.assertEqual(response.status_code, 200)
+        self.message.refresh_from_db()
+        self.assertTrue(self.message.is_deleted)
 
 class MessageSeenAPITest(TestCase):
     def setUp(self):
@@ -332,7 +314,9 @@ class MessageSeenAPITest(TestCase):
         self.message = Message.objects.create(
             conversation=self.conversation,
             sender=self.other_user,
-            content='Hello'
+            ciphertext='Hello',
+            encrypted_aes_key='k',
+            iv='i'
         )
 
     def test_mark_message_seen_success(self):
@@ -354,8 +338,8 @@ class MessageSeenAPITest(TestCase):
         self.assertEqual(response.status_code, 404)
 
     def test_mark_conversation_seen_success(self):
-        Message.objects.create(conversation=self.conversation, sender=self.other_user, content='Message 2')
-        Message.objects.create(conversation=self.conversation, sender=self.user, content='My own message')
+        Message.objects.create(conversation=self.conversation, sender=self.other_user, ciphertext='Message 2', encrypted_aes_key='k2', iv='i2')
+        Message.objects.create(conversation=self.conversation, sender=self.user, ciphertext='My own message', encrypted_aes_key='k3', iv='i3')
 
         url = reverse('api_mark_conversation_seen', kwargs={'conversation_id': self.conversation.id})
         response = self.client.post(f"{url}?api_key=test-api-key-seen")
@@ -377,7 +361,7 @@ class MessageSeenAPITest(TestCase):
         self.assertEqual(response.status_code, 404)
 
     def test_mark_own_message_seen(self):
-        own_message = Message.objects.create(conversation=self.conversation, sender=self.user, content='My own')
+        own_message = Message.objects.create(conversation=self.conversation, sender=self.user, ciphertext='My own', encrypted_aes_key='k4', iv='i4')
         url = reverse('api_mark_message_seen', kwargs={'message_id': own_message.id})
         response = self.client.post(f"{url}?api_key=test-api-key-seen")
 
@@ -398,7 +382,9 @@ class GetConversationsAPITest(TestCase):
         self.message = Message.objects.create(
             conversation=self.conversation,
             sender=self.other_user,
-            content='Hello from other user'
+            ciphertext='Hello from other user',
+            encrypted_aes_key='k_conv',
+            iv='i_conv'
         )
 
     def test_get_conversations_success(self):
@@ -414,7 +400,9 @@ class GetConversationsAPITest(TestCase):
         self.assertEqual(conv['id'], self.conversation.id)
         self.assertEqual(conv['other_participant']['username'], 'otheruser_convs')
         self.assertEqual(conv['unread_count'], 1)
-        self.assertEqual(conv['last_message']['content'], 'Hello from other user')
+        self.assertEqual(conv['last_message']['ciphertext'], 'Hello from other user')
+        self.assertEqual(conv['last_message']['encrypted_aes_key'], 'k_conv')
+        self.assertEqual(conv['last_message']['iv'], 'i_conv')
         self.assertEqual(conv['last_message']['sender_id'], self.other_user.id)
 
     def test_get_conversations_unauthorized(self):
@@ -540,3 +528,4 @@ class UserLastLoginAPITest(TestCase):
         url = reverse('api_user_last_login', kwargs={'user_id': 9999})
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
