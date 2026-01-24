@@ -14,14 +14,21 @@ class UserUpdateForm(forms.ModelForm):
 class MessageForm(forms.ModelForm):
     class Meta:
         model = Message
-        fields = ['content']
+        fields = ['ciphertext', 'encrypted_aes_key', 'iv']
+        
         widgets = {
-            'content': forms.Textarea(attrs={
-                'class': 'form-control',
-                'rows': 3,
-                'placeholder': 'Type your message here...',
-            }),
+            'ciphertext': forms.HiddenInput(),
+            'encrypted_aes_key': forms.HiddenInput(),
+            'iv': forms.HiddenInput(),
         }
-        labels = {
-            'content': '',
-        }
+
+    raw_message = forms.CharField(
+        widget=forms.Textarea(attrs={
+            'id': 'raw-message-input',
+            'class': 'form-control',
+            'rows': 3,
+            'placeholder': 'Type your secure message here...',
+        }),
+        label='',
+        required=False
+    )

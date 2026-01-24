@@ -32,7 +32,9 @@ class Message(models.Model):
         related_name='sent_messages',
         on_delete=models.CASCADE
     )
-    content = models.TextField()
+    ciphertext = models.TextField(null=True, blank=True)#TODO TEMPORRARY BLANK|
+    encrypted_aes_key = models.TextField(null=True, blank=True) #TODO TEMPORRARY BLANK|
+    iv = models.CharField(max_length=255, blank=True, null=True)
     timestamp = models.DateTimeField(default=timezone.now)
     edited_at = models.DateTimeField(null=True, blank=True)
     is_read = models.BooleanField(default=False)
@@ -42,7 +44,7 @@ class Message(models.Model):
         ordering = ['timestamp']
 
     def __str__(self):
-        return f"{self.sender.username}: {self.content[:50]}"
+        return f"{self.sender.username}: {self.ciphertext[:50]}"
 
 
 class MessageReadStatus(models.Model):
@@ -64,6 +66,7 @@ class UserSettings(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     email = models.EmailField()
     api_key = models.CharField(max_length=128, blank=True, null=True, unique=True)
+    public_key = models.TextField(blank=True, null=True, help_text="Klucz publiczny RSA w formacie PEM")
 
     def __str__(self):
         return self.user.username
@@ -73,3 +76,10 @@ class UserSettings(models.Model):
 
     def get_username(self):
         return self.user.username
+
+class UserFriendsData(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    friends = models.ManyToManyField(User, related_name='friend_of')
+
+    def __str__(self):
+        return f"Friends {self.user.username}"

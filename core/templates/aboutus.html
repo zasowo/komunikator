@@ -1,32 +1,62 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f8f9fa;
-            text-align: center;
-            padding-top: 100px;
-        }
-        h1 {
-            color: #333;
-        }
-        .btn {
-            display: inline-block;
-            margin: 10px;
-            padding: 10px 20px;
-            color: white;
-            background-color: #007bff;
-            text-decoration: none;
-            border-radius: 5px;
-        }
-        .btn:hover {
-            background-color: #0056b3;
-        }
-    </style>
-</head>
-<body>
-    <h1>About us: not sure about rest of my team but I am lazy.</h1>
-</body>
-</html>
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-5">
+
+    <div class="text-center mb-5">
+        <h1>About Us</h1>
+        <p class="lead text-muted">
+            Gr. lab. 1
+        </p>
+    </div>
+
+    <div class="mb-5">
+        <h3>About app</h3>
+        <p>
+            This is a secure communication platform built with a Zero-Trust security architecture. The application ensures that the server never has access to the plaintext content of messages by implementing true End-to-End Encryption (E2EE).
+            Core Concept: Zero-Trust. In this model, the server is treated as a potentially compromised or untrusted entity. It only acts as a storage and relay for encrypted "blobs". All cryptographic operations (encryption and decryption) happen exclusively in the user's browser using the Web Crypto API.
+            Tech Stack
+            Backend: Django (Python)
+            Frontend: JavaScript (Web Crypto API)
+            Database: SQLite (Development) / PostgreSQL (Production)
+            Encryption: Hybrid RSA-OAEP (2048-bit) + AES-GCM (256-bit)
+        </p>
+    </div>
+
+        <div class="mb-5">
+        <h3>Tech Stack</h3>
+        <p>
+            Backend: Django (Python)
+            Frontend: JavaScript (Web Crypto API)
+            Database: SQLite (Development) / PostgreSQL (Production)
+            Encryption: Hybrid RSA-OAEP (2048-bit) + AES-GCM (256-bit)
+        </p>
+    </div>
+
+    <div class="mb-5">
+        <h3>Team</h3>
+        <div class="row">
+            <div class="col-md-4 mb-4 text-center">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/7/7c/Profile_avatar_placeholder_large.png?20150327203541" class="rounded-circle mb-2" alt="Team Member" style="width: 180px; height: 180px; object-fit: cover;">
+                <h5>zasowo</h5>
+                <p class="text-muted">dev</p>
+            </div>
+            <div class="col-md-4 mb-4 text-center">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/7/7c/Profile_avatar_placeholder_large.png?20150327203541" class="rounded-circle mb-2" alt="Team Member" style="width: 180px; height: 180px; object-fit: cover;">
+                <h5>adrakurmo</h5>
+                <p class="text-muted">dev</p>
+            </div>
+            <div class="col-md-4 mb-4 text-center">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/7/7c/Profile_avatar_placeholder_large.png?20150327203541" class="rounded-circle mb-2" alt="Team Member" style="width: 180px; height: 180px; object-fit: cover;">
+                <h5>becken</h5>
+                <p class="text-muted">dev</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="text-center">
+        <a href="/register/" class="btn btn-primary btn-lg">Join Us Today</a>
+    </div>
+
+</div>
+{% endblock %}
