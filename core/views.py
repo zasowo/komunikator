@@ -358,6 +358,7 @@ def user_list(request):
 @authentication_classes([APIKeyAuthentication, SessionAuthentication])
 @permission_classes([IsAuthenticated])
 @schema(ManualParametersSchema(
+    tags=['Messages'],
     query_parameters=[
         {'name': 'last_message_id', 'type': 'integer', 'description': 'Zwraca wiadomości z określonej konwersacji. Opcjonalny argument do ograniczenia selekcji do tylko wiadomości nowszysch niż określona wiadomość.'},
         {'name': 'api_key', 'type': 'string', 'description': 'Klucz uwierzytelniania'}
@@ -394,6 +395,7 @@ def get_new_messages(request, conversation_id):
 @authentication_classes([APIKeyAuthentication, SessionAuthentication])
 @permission_classes([IsAuthenticated])
 @schema(ManualParametersSchema(
+    tags=['Messages'],
     query_parameters=[
         {'name': 'api_key', 'type': 'string', 'description': 'Klucz uwierzytelniania'}
     ]
@@ -445,6 +447,7 @@ def api_unread_messages(request):
 @authentication_classes([APIKeyAuthentication, SessionAuthentication])
 @permission_classes([IsAuthenticated])
 @schema(ManualParametersSchema(
+    tags=['Conversations'],
     query_parameters=[
         {'name': 'api_key', 'type': 'string', 'description': 'Klucz uwierzytelniania.'}
     ]
@@ -496,6 +499,7 @@ def api_get_conversations(request):
 @authentication_classes([APIKeyAuthentication, SessionAuthentication])
 @permission_classes([IsAuthenticated])
 @schema(ManualParametersSchema(
+    tags=['Conversations'],
     query_parameters=[
         {'name': 'api_key', 'type': 'string', 'description': 'Klucz uwierzytelniania'}
     ],
@@ -568,6 +572,7 @@ def api_send_message(request, conversation_id):
 @authentication_classes([APIKeyAuthentication, SessionAuthentication])
 @permission_classes([IsAuthenticated])
 @schema(ManualParametersSchema(
+    tags=['Messages'],
     query_parameters=[
         {'name': 'api_key', 'type': 'string', 'description': 'Klucz uwierzytelniania'}
     ]
@@ -619,6 +624,7 @@ def api_get_messages_with_user(request, user_id):
 @authentication_classes([APIKeyAuthentication, SessionAuthentication])
 @permission_classes([IsAuthenticated])
 @schema(ManualParametersSchema(
+    tags=['Conversations'],
     query_parameters=[
         {'name': 'api_key', 'type': 'string', 'description': 'Klucz uwierzytelniania'}
     ]
@@ -662,8 +668,8 @@ def api_start_conversation(request, user_id):
 @authentication_classes([APIKeyAuthentication, SessionAuthentication])
 @permission_classes([IsAuthenticated])
 @schema(ManualParametersSchema(
+    tags=['Conversations'],
     query_parameters=[
-        {'name': 'date', 'type': 'string', 'required': True, 'description': 'Data w formacie ISO 8601'},
         {'name': 'api_key', 'type': 'string', 'description': 'Klucz uwierzytelniania'}
     ]
 ))
@@ -720,6 +726,7 @@ def api_get_messages_newer_than(request, conversation_id):
 @authentication_classes([APIKeyAuthentication, SessionAuthentication])
 @permission_classes([IsAuthenticated])
 @schema(ManualParametersSchema(
+    tags=['Messages'],
     query_parameters=[
         {'name': 'api_key', 'type': 'string', 'description': 'Klucz uwierzytelniania'}
     ]
@@ -745,6 +752,7 @@ def api_mark_message_seen(request, message_id):
 @authentication_classes([APIKeyAuthentication, SessionAuthentication])
 @permission_classes([IsAuthenticated])
 @schema(ManualParametersSchema(
+    tags=['Conversations'],
     query_parameters=[
         {'name': 'api_key', 'type': 'string', 'description': 'Klucz uwierzytelniania'}
     ]
@@ -773,6 +781,7 @@ def api_mark_conversation_seen(request, conversation_id):
 @authentication_classes([APIKeyAuthentication, SessionAuthentication])
 @permission_classes([IsAuthenticated])
 @schema(ManualParametersSchema(
+    tags=['Profile'],
     query_parameters=[
         {'name': 'api_key', 'type': 'string', 'description': 'Klucz uwierzytelniania'}
     ],
@@ -845,6 +854,7 @@ def api_profile(request):
 @api_view(["GET"])
 @permission_classes([AllowAny])
 @schema(ManualParametersSchema(
+    tags=['Users'],
     query_parameters=[
         {'name': 'username', 'type': 'string', 'required': True, 'description': 'Nazwa szukanego użytkownik.a'},
     ]
@@ -876,6 +886,7 @@ def api_find_user(request):
 
 @api_view(["GET"])
 @permission_classes([AllowAny])
+@schema(ManualParametersSchema(tags=['Users']))
 def api_user_last_login(request, user_id):
     """
     Zwraca informację o ostatnim czasie logowania użytkownika. Nie wymaga uwierzytelniania.
@@ -892,6 +903,7 @@ def api_user_last_login(request, user_id):
 @authentication_classes([APIKeyAuthentication, SessionAuthentication])
 @permission_classes([IsAuthenticated])
 @schema(ManualParametersSchema(
+    tags=['Profile'],
     query_parameters=[
         {'name': 'api_key', 'type': 'string', 'description': 'Klucz uwierzytelniania'}
     ],
@@ -917,6 +929,7 @@ def api_update_public_key(request):
 
 @api_view(["GET"])
 @permission_classes([AllowAny])
+@schema(ManualParametersSchema(tags=['Users']))
 def api_get_public_key(request, user_id):
     """
     Pobiera klucz publiczny użytkownika.
@@ -931,6 +944,7 @@ def api_get_public_key(request, user_id):
 @authentication_classes([APIKeyAuthentication, SessionAuthentication])
 @permission_classes([IsAuthenticated])
 @schema(ManualParametersSchema(
+    tags=['Messages'],
     query_parameters=[
         {'name': 'api_key', 'type': 'string', 'description': 'Klucz uwierzytelniania'}
     ],
@@ -981,6 +995,7 @@ def api_edit_message(request, message_id):
 @authentication_classes([APIKeyAuthentication, SessionAuthentication])
 @permission_classes([IsAuthenticated])
 @schema(ManualParametersSchema(
+    tags=['Messages'],
     query_parameters=[
         {'name': 'api_key', 'type': 'string', 'description': 'Klucz uwierzytelniania'}
     ]
