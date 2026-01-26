@@ -36,7 +36,9 @@ class Message(models.Model):
     encrypted_aes_key = models.TextField(null=True, blank=True) #TODO TEMPORRARY BLANK|
     iv = models.CharField(max_length=255, blank=True, null=True)
     timestamp = models.DateTimeField(default=timezone.now)
+    edited_at = models.DateTimeField(null=True, blank=True)
     is_read = models.BooleanField(default=False)
+    is_deleted = models.BooleanField(default=False)
 
     class Meta:
         ordering = ['timestamp']
