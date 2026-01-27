@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static %}
 
 {% block title %}Chat with {{ other_participant.username }}{% endblock %}
 
@@ -32,27 +33,38 @@
                             <div class="d-inline-block" style="max-width: 70%;">
                                 <div class="p-2 rounded {% if message.sender == user %}bg-primary text-white{% else %}bg-light{% endif %}">
                                     <strong>{{ message.sender.username }}</strong><br>
-                                    {% if message.sender == user %}
-                                        <span class="small">Your secure message</span>
-                                    {% else %}
+                                    
+                                    {# --- LOGIKA WYBORU KLUCZA DLA ISTNIEJĄCYCH WIADOMOŚCI --- #}
                                     <span class="encrypted-msg" 
-                                        data-ciphertext="{{ message.ciphertext }}" 
-                                        data-aes-key="{{ message.encrypted_aes_key }}" 
-                                        data-iv="{{ message.iv }}">
-                                        {{ message.ciphertext|truncatechars:20 }}
+                                          data-ciphertext="{{ message.ciphertext }}" 
+                                          
+                                          {# Jeśli jesteś nadawcą, weź klucz sender, w przeciwnym razie klucz recipient #}
+                                          data-aes-key="{% if message.sender == user %}{{ message.encrypted_aes_key_sender|default:'' }}{% else %}{{ message.encrypted_aes_key|default:'' }}{% endif %}" 
+                                          
+                                          data-iv="{{ message.iv }}">
+                                          
+                                          {# Fallback dla starych wiadomości bez klucza nadawcy #}
+                                          {% if message.sender == user and not message.encrypted_aes_key_sender %}
+                                              <span class="small fst-italic">(Old secure message - cannot decrypt)</span>
+                                          {% else %}
+                                              {{ message.ciphertext|truncatechars:20 }}
+                                          {% endif %}
                                     </span>
-                                    {% endif %}
                                 </div>
                                 <small class="text-muted">{{ message.timestamp|date:"M d, Y H:i" }}</small>
                             </div>
                         </div>
                     {% endfor %}
                 </div>
+
                 <div class="card-footer">
                     <form method="post" id="message-form">
                         {% csrf_token %}
+                        
+                        {# Ukryte pola, które JavaScript wypełni po zaszyfrowaniu #}
                         {{ form.ciphertext }}
-                        {{ form.encrypted_aes_key }}
+                        {{ form.encrypted_aes_key }}         {# Klucz dla odbiorcy #}
+                        {{ form.encrypted_aes_key_sender }}  {# Klucz dla mnie (nadawcy) #}
                         {{ form.iv }}
                         
                         <div class="input-group">
@@ -61,31 +73,25 @@
                         </div>
                     </form>
                 </div>
+
             </div>
         </div>
     </div>
 </div>
 
-{% load static %}
 <script>
-    // Te dane są potrzebne dla skryptu zewnętrznego
     const CHAT_CONFIG = {
         conversationId: {{ conversation.id }},
         lastMessageId: {{ messages.last.id|default:0 }},
         currentUserId: {{ user.id }},
-        urlGetNewMessages: "{% url 'get_new_messages' conversation.id %}"
+        urlGetNewMessages: "{% url 'get_new_messages' conversation.id %}",
     };
-</script>
-<script src="{% static 'js/chat_refresh.js' %}"></script>
-
-<!-- ENCRYPTING NEW MESSAGE -->
-{% load static %}
-<script>
     const RECIPIENT_PUBLIC_KEY = `{{ other_participant.usersettings.public_key|safe }}`;
+    const SENDER_PUBLIC_KEY = `{{ user.usersettings.public_key|safe }}`;
 </script>
 
+<script src="{% static 'js/chat_refresh.js' %}"></script>
 <script src="{% static 'js/crypto_encrypt.js' %}"></script>
 <script src="{% static 'js/crypto_decrypt.js' %}"></script>
-
 
 {% endblock %}

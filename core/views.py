@@ -303,7 +303,6 @@ def conversation(request, conversation_id):
             message.save()
             conversation.save()
 
-            # Jeśli to zapytanie AJAX, zwróć JSON zamiast redirect
             if request.headers.get('x-requested-with') == 'XMLHttpRequest':
                 return JsonResponse({'status': 'ok'})
 
@@ -353,24 +352,17 @@ def user_list(request):
     }
     return render(request, 'messaging/user_list.html', context)
 
-
 @api_view(["GET"])
 @authentication_classes([APIKeyAuthentication, SessionAuthentication])
 @permission_classes([IsAuthenticated])
 @schema(ManualParametersSchema(
     tags=['Messages'],
     query_parameters=[
-        {'name': 'last_message_id', 'type': 'integer', 'description': 'Zwraca wiadomości z określonej konwersacji. Opcjonalny argument do ograniczenia selekcji do tylko wiadomości nowszysch niż określona wiadomość.'},
+        {'name': 'last_message_id', 'type': 'integer', 'description': 'ID ostatniej wiadomości'},
         {'name': 'api_key', 'type': 'string', 'description': 'Klucz uwierzytelniania'}
     ]
 ))
 def get_new_messages(request, conversation_id):
-    """
-    Zwraca wiadomości z określonej konwersacji. Opcjonalny argument do ograniczenia selekcji do tylko wiadomości nowszysch niż określona wiadomość.
-
-    Parameters:
-    - last_message_id: (optional) Ostatnia/najnowsza wiadomość, która nie powinna zostać zwrócona.
-    """
     conversation = get_object_or_404(
         Conversation,
         id=conversation_id,
@@ -381,12 +373,30 @@ def get_new_messages(request, conversation_id):
 
     new_messages = conversation.messages.filter(
         id__gt=last_message_id
-        ).select_related('sender').values(
-            'id', 'ciphertext', 'encrypted_aes_key', 'iv', 'timestamp', 'sender__username', 'sender__id'
-        )
+    ).select_related('sender').values(
+        'id', 'ciphertext', 'encrypted_aes_key', 'encrypted_aes_key_sender', 
+        'iv', 'timestamp', 'sender__username', 'sender__id'
+    )
+
+    results = []
+    for msg in new_messages:
+        if msg['sender__id'] == request.user.id:
+            proper_key = msg['encrypted_aes_key_sender']
+        else:
+            proper_key = msg['encrypted_aes_key']
+            
+        results.append({
+            'id': msg['id'],
+            'ciphertext': msg['ciphertext'],
+            'encrypted_aes_key': proper_key,
+            'iv': msg['iv'],
+            'timestamp': msg['timestamp'],
+            'sender__username': msg['sender__username'],
+            'sender__id': msg['sender__id']
+        })
 
     return Response({
-        'messages': list(new_messages),
+        'messages': results,
         'current_user_id': request.user.id
     })
 
@@ -401,17 +411,10 @@ def get_new_messages(request, conversation_id):
     ]
 ))
 def api_unread_messages(request):
-    """
-    Wszystkie wiadomości, do których ma dostęp dany użytkownik i nie zostały oznaczone jako przeczytane
-
-    Query Parameters:
-    - api_key: Klucz uwierzytelniania.
-    """
     user = request.user
-
     qs = (
         Message.objects.filter(conversation__participants=user, is_read=False)
-        .exclude(sender=user)
+        .exclude(sender=user) 
         .select_related("sender", "conversation")
         .prefetch_related("conversation__participants")
         .order_by("timestamp")
@@ -421,10 +424,15 @@ def api_unread_messages(request):
     for m in qs:
         participants = list(m.conversation.participants.all())
         other_user = next((u for u in participants if u.id != user.id), None)
+        if m.sender_id == user.id:
+            aes_key = m.encrypted_aes_key_sender
+        else:
+            aes_key = m.encrypted_aes_key
+
         results.append({
             "id": m.id,
             "ciphertext": m.ciphertext,
-            "encrypted_aes_key": m.encrypted_aes_key,
+            "encrypted_aes_key": aes_key,
             "iv": m.iv,
             "timestamp": m.timestamp.isoformat(),
             "conversation_id": m.conversation_id,
@@ -529,9 +537,10 @@ def api_send_message(request, conversation_id):
 
     ciphertext = request.data.get("ciphertext")
     encrypted_aes_key = request.data.get("encrypted_aes_key")
+    encrypted_aes_key_sender = request.data.get("encrypted_aes_key_sender")
     iv = request.data.get("iv")
 
-    if not all([ciphertext, encrypted_aes_key, iv]):
+    if not all([ciphertext, encrypted_aes_key,encrypted_aes_key_sender, iv]):
         return Response(
             {"detail": "E2EE requires ciphertext, encrypted_aes_key, and iv."},
             status=status.HTTP_400_BAD_REQUEST
@@ -542,13 +551,13 @@ def api_send_message(request, conversation_id):
         sender=user,
         ciphertext=ciphertext,
         encrypted_aes_key=encrypted_aes_key,
+        encrypted_aes_key_sender=encrypted_aes_key_sender,
         iv=iv
     )
 
     # Aktualizacja timestampu konwersacji
     conversation.save()
 
-    # 5. Przygotowanie odpowiedzi
     other_user = conversation.get_other_participant(user)
     payload = {
         "id": msg.id,
@@ -578,14 +587,7 @@ def api_send_message(request, conversation_id):
     ]
 ))
 def api_get_messages_with_user(request, user_id):
-    """
-    Zwraca wszystkie wiadomości z danym użytkownikiem
-
-    Query Parameters:
-    - api_key: (query/header) Klucz uwierzytelniania
-    """
     user = request.user
-
     other_user = get_object_or_404(User, id=user_id)
 
     conversation = Conversation.objects.filter(participants=user).filter(participants=other_user).first()
@@ -601,10 +603,16 @@ def api_get_messages_with_user(request, user_id):
 
     results = []
     for m in messages_qs:
+        # LOGIKA WYBORU KLUCZA
+        if m.sender_id == user.id:
+            aes_key = m.encrypted_aes_key_sender
+        else:
+            aes_key = m.encrypted_aes_key
+
         results.append({
             "id": m.id,
             "ciphertext": m.ciphertext,
-            "encrypted_aes_key": m.encrypted_aes_key,
+            "encrypted_aes_key": aes_key, # Frontend dostaje odpowiedni klucz tutaj
             "iv": m.iv,
             "timestamp": m.timestamp.isoformat(),
             "sender": {

@@ -14,11 +14,12 @@ class UserUpdateForm(forms.ModelForm):
 class MessageForm(forms.ModelForm):
     class Meta:
         model = Message
-        fields = ['ciphertext', 'encrypted_aes_key', 'iv']
+        fields = ['ciphertext', 'encrypted_aes_key', 'encrypted_aes_key_sender', 'iv']
         
         widgets = {
             'ciphertext': forms.HiddenInput(),
             'encrypted_aes_key': forms.HiddenInput(),
+            'encrypted_aes_key_sender': forms.HiddenInput(),
             'iv': forms.HiddenInput(),
         }
 

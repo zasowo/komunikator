@@ -34,6 +34,7 @@ class Message(models.Model):
     )
     ciphertext = models.TextField(null=True, blank=True)#TODO TEMPORRARY BLANK|
     encrypted_aes_key = models.TextField(null=True, blank=True) #TODO TEMPORRARY BLANK|
+    encrypted_aes_key_sender = models.TextField(null=True, blank=True)
     iv = models.CharField(max_length=255, blank=True, null=True)
     timestamp = models.DateTimeField(default=timezone.now)
     edited_at = models.DateTimeField(null=True, blank=True)
